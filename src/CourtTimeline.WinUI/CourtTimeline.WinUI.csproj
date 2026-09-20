@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>CourtTimeline</RootNamespace>
+    <AssemblyName>CourtTimeline.WinUI</AssemblyName>
+    <UseWinUI>true</UseWinUI>
+    <WinUISDKReferences>false</WinUISDKReferences>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- All UI is created in C#: no XAML/XBF, images or resw resources to index/package. -->
+    <AppxGeneratePriEnabled>false</AppxGeneratePriEnabled>
+    <IncludeProjectPriFile>false</IncludeProjectPriFile>
+    <GenerateLibraryLayout>false</GenerateLibraryLayout>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <IsPackable>true</IsPackable>
+    <PackageId>CourtTimeline.WinUI</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>LawLabs</Authors>
+    <Company>LawLabs (ООО «Лаборатория юридических исследований»)</Company>
+    <Description>Standalone WinUI 3 court process timeline with stages, actual and planned periods, and events. Host-owned data; no Kalends dependency.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/lawlabs/court-timeline-winui</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/lawlabs/court-timeline-winui</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>winui;winui3;court;timeline;legal;dotnet</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Copyright>Copyright (c) 2026 LawLabs</Copyright>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+    <None Include="../../LICENSE" Pack="true" PackagePath="/" />
+  </ItemGroup>
+</Project>

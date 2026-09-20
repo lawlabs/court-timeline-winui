@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CourtTimeline.WinUI/CourtTimeline.WinUI.csproj" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/CourtTimeline.WinUI.Sample/CourtTimeline.WinUI.Sample.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CourtTimeline.WinUI.Tests/CourtTimeline.WinUI.Tests.csproj" />
+  </Folder>
+</Solution>

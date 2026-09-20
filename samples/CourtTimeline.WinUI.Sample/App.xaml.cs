@@ -1,0 +1,15 @@
+using Microsoft.UI.Xaml;
+
+namespace CourtTimeline.Sample;
+
+public partial class App : Application
+{
+    private Window? _window;
+    public App() => InitializeComponent();
+
+    protected override void OnLaunched(LaunchActivatedEventArgs args)
+    {
+        _window = new SampleWindow();
+        _window.Activate();
+    }
+}
