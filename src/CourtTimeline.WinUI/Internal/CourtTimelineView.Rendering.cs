@@ -144,9 +144,9 @@ public sealed partial class CourtTimelineView
             Put(new Ellipse { Width = 8, Height = 8, Fill = item.Planned ? Brush("Surface") : color, Stroke = color, StrokeThickness = 1.5 }, placement.Point - 4, y + 60);
             var selection = new CourtTimelineSelection(CourtTimelineItemKind.Event, item.Id);
             var copy = new StackPanel { Spacing = 2 };
-            copy.Children.Add(Text(Day(item.Date) + (item.Time.Length > 0 ? " · " + item.Time : ""), 9, "Muted"));
+            copy.Children.Add(Text(Day(item.Date) + (item.Time is { Length: > 0 } time ? " · " + time : ""), 9, "Muted"));
             copy.Children.Add(Text(item.Title, 10, bold: selection == SelectedItem));
-            var button = ItemButton(copy, selection, $"{item.Title}, {item.Date.ToString("D", Culture)} {item.Time}, {(item.Planned ? Strings.Planned : Strings.Occurred)}", item.Note);
+            var button = ItemButton(copy, selection, $"{item.Title}, {item.Date.ToString("D", Culture)} {item.Time}, {(item.Planned ? Strings.Planned : Strings.Occurred)}", item.Note ?? "");
             button.Width = TimelineLayout.EventWidth; button.Height = 40;
             button.Padding = new Thickness(7, 3, 7, 3); button.CornerRadius = new CornerRadius(4);
             button.Background = Brush(selection == SelectedItem ? "Today" : "Surface");
@@ -161,7 +161,7 @@ public sealed partial class CourtTimelineView
         var button = new Button { Content = content, Tag = selection, HorizontalContentAlignment = HorizontalAlignment.Stretch };
         AutomationProperties.SetName(button, name);
         AutomationProperties.SetAutomationId(button, $"CourtTimeline.{selection.Kind}.{selection.Id}");
-        ToolTipService.SetToolTip(button, note.Length > 0 ? name + "\n" + note : name);
+        ToolTipService.SetToolTip(button, note is { Length: > 0 } ? name + "\n" + note : name);
         button.Click += (_, _) => SelectedItem = selection;
         return button;
     }
@@ -174,13 +174,13 @@ public sealed partial class CourtTimelineView
         var stage = selection?.Kind == CourtTimelineItemKind.Stage ? Data?.Stages.FirstOrDefault(s => s.Id == selection.Id) : null;
         void Add(string value, double size, string brush = "Text", bool bold = false)
         {
-            if (value.Length == 0) return;
+            if (string.IsNullOrEmpty(value)) return;
             var text = Text(value, size, brush, bold); text.TextWrapping = TextWrapping.Wrap; copy.Children.Add(text);
         }
         if (item is not null)
         {
             Add(item.Kind + " · " + (item.Planned ? Strings.Planned : Strings.Occurred), 10, "Brand");
-            Add(item.Title, 15, bold: true); Add(item.Date.ToString("D", Culture) + (item.Time.Length > 0 ? " · " + item.Time : ""), 12, "Muted");
+            Add(item.Title, 15, bold: true); Add(item.Date.ToString("D", Culture) + (item.Time is { Length: > 0 } time ? " · " + time : ""), 12, "Muted");
             Add(item.Location, 12, bold: true); Add(item.Note, 12, "Muted");
         }
         else if (stage is not null)

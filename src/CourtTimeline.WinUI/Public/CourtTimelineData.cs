@@ -1,8 +1,13 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace CourtTimeline;
 
 /// <summary>A host-owned snapshot. Dates are local calendar dates, without time zone conversion.</summary>
 public sealed record CourtTimelineData
 {
+    [SetsRequiredMembers]
+    public CourtTimelineData() { }
+
     public required DateOnly Start { get; init; }
     /// <summary>Exclusive axis boundary. Stage end dates, in contrast, are inclusive.</summary>
     public required DateOnly End { get; init; }

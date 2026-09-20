@@ -94,13 +94,28 @@ public sealed partial class CourtTimelineView : UserControl
         _clock.Tick += (_, _) => { if (Data?.Today is null) Refresh(); };
         Loaded += (_, _) =>
         {
-            if (!_subscribed) { _accessibility.HighContrastChanged += HighContrastChanged; _subscribed = true; }
+            if (!_subscribed)
+            {
+                try
+                {
+                    _accessibility.HighContrastChanged += HighContrastChanged;
+                    _subscribed = true;
+                }
+                catch (System.Runtime.InteropServices.COMException)
+                {
+                    // HighContrastChanged is unavailable in some unpackaged hosts.
+                }
+            }
             _clock.Start(); Refresh();
         };
         Unloaded += (_, _) =>
         {
             _clock.Stop();
-            if (_subscribed) { _accessibility.HighContrastChanged -= HighContrastChanged; _subscribed = false; }
+            if (_subscribed)
+            {
+                _accessibility.HighContrastChanged -= HighContrastChanged;
+                _subscribed = false;
+            }
         };
         _ready = true;
     }
