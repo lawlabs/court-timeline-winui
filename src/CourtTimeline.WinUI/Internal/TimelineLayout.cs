@@ -8,8 +8,11 @@ internal static class TimelineLayout
     internal const double EventGap = 8;
 
     internal sealed record EventPlacement(CourtEvent Event, double Point, double Left, int Lane);
+    internal enum StageEdge { None, Open, Deadline, Expired }
+
     internal sealed record Row(CourtStage Stage, double Top, double Height, double Left,
-        double Width, double FactWidth, DateOnly VisualEnd, IReadOnlyList<EventPlacement> Events);
+        double Width, double LeadWidth, double FactWidth, StageEdge Edge, DateOnly VisualStart, DateOnly VisualEnd,
+        IReadOnlyList<EventPlacement> Events);
     internal sealed record Result(double Width, double Height, double DayWidth, IReadOnlyList<Row> Rows)
     {
         internal double X(DateOnly date, DateOnly start) => LabelWidth + (date.DayNumber - start.DayNumber) * DayWidth;
@@ -32,7 +35,12 @@ internal static class TimelineLayout
         {
             if (stage is null || string.IsNullOrWhiteSpace(stage.Id) || !stages.Add(stage.Id))
                 throw new ArgumentException("Stages must have nonempty, unique IDs.", nameof(data));
-            if (stage.End < stage.Start) throw new ArgumentException($"Stage '{stage.Id}' ends before it starts.", nameof(data));
+            if (stage.PossibleFrom is { } possible && possible >= stage.Start)
+                throw new ArgumentException($"Stage '{stage.Id}' becomes possible on or after it starts.", nameof(data));
+            if (stage.Closed is { } closed && closed < stage.Start)
+                throw new ArgumentException($"Stage '{stage.Id}' closes before it starts.", nameof(data));
+            if (stage.Deadline is { } deadline && deadline < stage.Start)
+                throw new ArgumentException($"Stage '{stage.Id}' deadline is before it starts.", nameof(data));
             if (!Enum.IsDefined(stage.State) || !Enum.IsDefined(stage.Tone))
                 throw new ArgumentException($"Stage '{stage.Id}' has an unknown state or tone.", nameof(data));
         }
@@ -45,7 +53,7 @@ internal static class TimelineLayout
         }
     }
 
-    internal static Result Calculate(CourtTimelineData data, DateOnly today, bool showPlan, double viewportWidth, double zoom)
+    internal static Result Calculate(CourtTimelineData data, DateOnly today, double viewportWidth, double zoom)
     {
         Validate(data);
         if (!double.IsFinite(viewportWidth) || viewportWidth <= 0) throw new ArgumentOutOfRangeException(nameof(viewportWidth));
@@ -58,24 +66,52 @@ internal static class TimelineLayout
         var rows = new List<Row>();
         double top = 76;
         var eventsByStage = data.Events.ToLookup(item => item.StageId, StringComparer.Ordinal);
+        int tomorrow = today.DayNumber + 1;
         foreach (var stage in data.Stages)
         {
-            if (!showPlan && stage.State == CourtStageState.Potential) continue;
-            int start = Clip(stage.Start.DayNumber);
-            // DayNumber + 1 avoids overflowing DateOnly.MaxValue.
-            int end = Clip(stage.End.DayNumber + 1);
-            int factEnd = stage.State switch
+            int factStart = stage.Start.DayNumber;
+            int bandStart = stage.PossibleFrom is { } possible ? possible.DayNumber : factStart;
+            bool closed = stage.State != CourtStageState.Potential && (stage.State == CourtStageState.Completed || stage.Closed is not null);
+            int InclusiveEnd(DateOnly? day, int fallback) => (day?.DayNumber ?? fallback) + 1;
+            int bandEnd;
+            var edge = StageEdge.None;
+            if (stage.State == CourtStageState.Potential)
+                bandEnd = InclusiveEnd(stage.Deadline, factStart);
+            else if (closed)
+                bandEnd = InclusiveEnd(stage.Closed ?? stage.Deadline, factStart);
+            else if (stage.Deadline is { } promise && promise.DayNumber > today.DayNumber)
             {
-                CourtStageState.Completed => end,
-                CourtStageState.Active => Math.Clamp(today.DayNumber + 1, start, Math.Max(start, end)),
-                _ => start
-            };
-            if (!showPlan) end = factEnd;
-            double left = X(start);
+                bandEnd = promise.DayNumber + 1;
+                edge = StageEdge.Deadline;
+            }
+            else if (stage.Deadline is not null)
+            {
+                bandEnd = tomorrow;
+                edge = StageEdge.Expired;
+            }
+            else
+            {
+                bandEnd = tomorrow;
+                edge = StageEdge.Open;
+            }
+            foreach (var item in eventsByStage[stage.Id])
+            {
+                if (item.Date < data.Start || item.Date >= data.End) continue;
+                bandEnd = Math.Max(bandEnd, item.Date.DayNumber + 1);
+            }
+            // Fact includes the whole of today. Only a future deadline, or a later linked event, continues as hatch.
+            int factEnd = stage.State == CourtStageState.Potential
+                ? factStart
+                : closed ? bandEnd : Math.Min(bandEnd, Math.Max(factStart, tomorrow));
+            if (bandEnd < bandStart) bandStart = bandEnd;
+            if (bandEnd > data.End.DayNumber || bandEnd <= bandStart) edge = StageEdge.None;
+            int drawStart = Clip(bandStart);
+            int drawEnd = Clip(bandEnd);
+            double left = X(drawStart);
             var laneEnds = new List<double>();
             var placements = new List<EventPlacement>();
             foreach (var item in eventsByStage[stage.Id]
-                .Where(e => (showPlan || !e.Planned) && e.Date >= data.Start && e.Date < data.End)
+                .Where(e => e.Date >= data.Start && e.Date < data.End)
                 .OrderBy(e => e.Date).ThenBy(e => e.Id, StringComparer.Ordinal))
             {
                 double point = X(item.Date.DayNumber) + dayWidth / 2;
@@ -85,12 +121,17 @@ internal static class TimelineLayout
                 laneEnds[lane] = labelLeft + EventWidth;
                 placements.Add(new(item, point, labelLeft, lane));
             }
-            bool hasBand = end > start;
+            bool hasBand = drawEnd > drawStart;
             if (!hasBand && placements.Count == 0) continue;
+            int leadDay = Math.Clamp(factStart, drawStart, drawEnd);
+            int factDay = Math.Clamp(factEnd, drawStart, drawEnd);
+            double lead = X(leadDay) - left;
+            double fact = Math.Max(0, X(factDay) - X(Math.Max(drawStart, factStart)));
             double height = Math.Max(164, 88 + laneEnds.Count * 44);
-            var visualEnd = DateOnly.FromDayNumber(Math.Max(start, end - 1));
-            rows.Add(new(stage, top, height, left, Math.Max(0, X(end) - left),
-                Math.Max(0, X(Math.Min(factEnd, end)) - left), visualEnd, placements));
+            var visualStart = DateOnly.FromDayNumber(hasBand ? drawStart : stage.Start.DayNumber);
+            var visualEnd = DateOnly.FromDayNumber(hasBand ? drawEnd - 1 : stage.Start.DayNumber);
+            rows.Add(new(stage, top, height, left, hasBand ? X(drawEnd) - left : 0, lead, fact, hasBand ? edge : StageEdge.None,
+                visualStart, visualEnd, placements));
             top += height;
         }
         return new(width, Math.Max(200, top), dayWidth, rows);

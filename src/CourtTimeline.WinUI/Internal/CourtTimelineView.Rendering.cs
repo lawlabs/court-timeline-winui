@@ -51,10 +51,8 @@ public sealed partial class CourtTimelineView
         Grid.SetColumn(_actions, narrow ? 0 : 1); Grid.SetRow(_actions, narrow ? 1 : 0);
         Grid.SetColumnSpan(_summary, narrow ? 2 : 1); Grid.SetColumnSpan(_actions, narrow ? 2 : 1);
         _actions.HorizontalAlignment = narrow ? HorizontalAlignment.Left : HorizontalAlignment.Right;
-        _plan.Content = Strings.ShowPlan; _plan.IsChecked = ShowPlan;
         _fit.Content = Zoom == 1 ? Strings.Fit : $"{Zoom.ToString("0.#", Culture)}× · {Strings.Fit}";
         _zoomOut.IsEnabled = Zoom > 1; _zoomIn.IsEnabled = Zoom < 4;
-        AutomationProperties.SetName(_plan, Strings.ShowPlan);
         AutomationProperties.SetName(_fit, Strings.Fit);
         AutomationProperties.SetName(_zoomIn, Strings.ZoomIn); AutomationProperties.SetName(_zoomOut, Strings.ZoomOut);
         _frame.BorderBrush = Brush("Line"); _legend.Text = Strings.Legend; _legend.Foreground = Brush("Muted");
@@ -96,14 +94,20 @@ public sealed partial class CourtTimelineView
         var mark = TodayMark(data);
         if (mark.Date >= data.Start && mark.Date < data.End)
         {
-            double point = X(mark.Date) + layout.DayWidth * mark.Fraction;
+            double point = X(mark.Date);
+            var wash = new Rectangle
+            {
+                Width = layout.DayWidth, Height = Math.Max(0, layout.Height - 44), Fill = Brush("Now"),
+                Opacity = _highContrast ? .32 : .14, IsHitTestVisible = false
+            };
+            Put(wash, point, 44);
             Line(point, 44, point, layout.Height, Brush("Now"), true);
             string caption = mark.Time is { } time
                 ? $"{Day(mark.Date)} · {time.ToString("t", Culture)} · {Strings.Today}"
                 : $"{Day(mark.Date)} · {Strings.Today}";
             var label = new Border { Background = Brush("Surface"), Padding = new Thickness(5, 2, 5, 2),
                 Child = Text(caption, 9, "Now", true), MaxWidth = 230 };
-            Put(label, Math.Clamp(point - 72, TimelineLayout.LabelWidth, layout.Width - 236), 45);
+            Put(label, Math.Clamp(point + 6, TimelineLayout.LabelWidth, layout.Width - 236), 45);
         }
         foreach (var row in layout.Rows) RenderRow(row);
     }
@@ -120,21 +124,71 @@ public sealed partial class CourtTimelineView
         status.Width = TimelineLayout.LabelWidth - 28; Put(status, 16, y + 46);
         if (row.Width > 0)
         {
+            double tailLeft = row.LeadWidth + row.FactWidth;
+            double tail = Math.Max(0, row.Width - tailLeft);
             var band = new Grid { Width = row.Width, Height = 52, Clip = new RectangleGeometry { Rect = new Rect(0, 0, row.Width, 52) } };
-            band.Children.Add(new Border { Width = row.FactWidth, HorizontalAlignment = HorizontalAlignment.Left, Background = Tone(stage, true), CornerRadius = new CornerRadius(5) });
-            var hatch = new Canvas { IsHitTestVisible = false, Clip = new RectangleGeometry { Rect = new Rect(row.FactWidth, 0, row.Width - row.FactWidth, 52) } };
-            for (double x = row.FactWidth - 52; x < row.Width; x += 9)
-                hatch.Children.Add(new Line { X1 = x, Y1 = 52, X2 = x + 52, Y2 = 0, Stroke = color, Opacity = _highContrast ? 1 : .16, StrokeThickness = 1 });
-            band.Children.Add(hatch);
+            if (row.FactWidth > 0)
+            {
+                bool roundLeft = row.LeadWidth < .5;
+                bool roundRight = tail < .5;
+                band.Children.Add(new Border
+                {
+                    Width = row.FactWidth, Height = 52, HorizontalAlignment = HorizontalAlignment.Left,
+                    Margin = new Thickness(row.LeadWidth, 0, 0, 0), Background = Tone(stage, true),
+                    CornerRadius = new CornerRadius(roundLeft ? 5 : 0, roundRight ? 5 : 0, roundRight ? 5 : 0, roundLeft ? 5 : 0)
+                });
+            }
+            void Hatch(double left, double width)
+            {
+                if (width <= .5) return;
+                var hatch = new Canvas
+                {
+                    Width = width, Height = 52, Margin = new Thickness(left, 0, 0, 0),
+                    HorizontalAlignment = HorizontalAlignment.Left, IsHitTestVisible = false,
+                    Clip = new RectangleGeometry { Rect = new Rect(0, 0, width, 52) }
+                };
+                for (double x = -52; x < row.Width; x += 9)
+                    hatch.Children.Add(new Line { X1 = x - left, Y1 = 52, X2 = x - left + 52, Y2 = 0, Stroke = color, Opacity = _highContrast ? 1 : .16, StrokeThickness = 1 });
+                band.Children.Add(hatch);
+            }
+            Hatch(0, row.LeadWidth);
+            Hatch(tailLeft, tail);
             var selection = new CourtTimelineSelection(CourtTimelineItemKind.Stage, stage.Id);
             var outline = new Rectangle { Stroke = color, StrokeThickness = SelectedItem == selection ? 2 : 1, RadiusX = 5, RadiusY = 5, IsHitTestVisible = false };
             if (stage.State == CourtStageState.Potential) outline.StrokeDashArray = [5, 4];
             band.Children.Add(outline);
-            var copy = new StackPanel { Spacing = 3, Margin = new Thickness(12, 7, 10, 5) };
+            var overlay = new Canvas { Width = row.Width, Height = 52 };
+            void Divider(double x)
+            {
+                if (x <= .5 || x >= row.Width - .5) return;
+                overlay.Children.Add(new Line
+                {
+                    X1 = x, X2 = x, Y1 = 4, Y2 = 48, Stroke = color, StrokeThickness = 1.5,
+                    StrokeDashArray = [3, 3], IsHitTestVisible = false
+                });
+            }
+            if (row.LeadWidth > .5) Divider(row.LeadWidth);
+            if (tail > .5 && row.FactWidth > .5) Divider(tailLeft);
+            if (row.Edge == TimelineLayout.StageEdge.Deadline && stage.Deadline is { } promised)
+            {
+                string until = string.Format(Culture, Strings.Until, Day(promised));
+                string captionText = stage.DeadlineVia.Length > 0 ? stage.DeadlineVia + " · " + until : until;
+                if (tail >= 28 + captionText.Length * 6.4)
+                {
+                    var caption = Text(captionText, 10, "Muted");
+                    caption.IsHitTestVisible = false;
+                    Canvas.SetLeft(caption, tailLeft + 8); Canvas.SetTop(caption, 18); overlay.Children.Add(caption);
+                }
+            }
+            AddEdgeMarker(overlay, row, color);
+            double textBudget = row.FactWidth > 40 ? tailLeft : row.Width;
+            if (row.Edge != TimelineLayout.StageEdge.None) textBudget = Math.Min(textBudget, row.Width - 22);
+            var copy = new StackPanel { Spacing = 3, Margin = new Thickness(12, 7, 10, 5), MaxWidth = Math.Max(36, textBudget - 18) };
             var bandTitle = Text(stage.Title, 12, bold: true); bandTitle.Foreground = color; copy.Children.Add(bandTitle);
-            copy.Children.Add(Text($"{Day(stage.Start)} — {Day(row.VisualEnd)}" + (stage.State == CourtStageState.Potential ? " · " + Strings.Potential : ""), 10, "Muted"));
+            copy.Children.Add(Text($"{Day(row.VisualStart)} — {Day(row.VisualEnd)}" + (stage.State == CourtStageState.Potential ? " · " + Strings.Potential : ""), 10, "Muted"));
             band.Children.Add(copy);
-            var button = ItemButton(band, selection, $"{stage.Title}, {stage.Status}, {stage.Start.ToString("D", Culture)} — {row.VisualEnd.ToString("D", Culture)}", stage.Note);
+            band.Children.Add(overlay);
+            var button = ItemButton(band, selection, $"{stage.Title}, {stage.Status}, {row.VisualStart.ToString("D", Culture)} — {row.VisualEnd.ToString("D", Culture)}", stage.Note);
             button.Padding = new Thickness(0); button.MinWidth = 0; button.MinHeight = 0; button.BorderThickness = new Thickness(0);
             button.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
             Put(button, row.Left, y);
@@ -159,16 +213,75 @@ public sealed partial class CourtTimelineView
         }
     }
 
-    private readonly record struct TodayMarker(DateOnly Date, double Fraction, TimeOnly? Time);
+    private readonly record struct TodayMarker(DateOnly Date, TimeOnly? Time);
     private static TodayMarker TodayMark(CourtTimelineData data)
     {
-        if (data.Today is { } pinned)
-        {
-            double fraction = data.Now is { } time ? time.ToTimeSpan().TotalHours / 24d : 0.5;
-            return new(pinned, fraction, data.Now);
-        }
+        if (data.Today is { } pinned) return new(pinned, data.Now);
         var now = DateTime.Now;
-        return new(DateOnly.FromDateTime(now), now.TimeOfDay.TotalHours / 24d, TimeOnly.FromDateTime(now));
+        return new(DateOnly.FromDateTime(now), TimeOnly.FromDateTime(now));
+    }
+
+    private void AddEdgeMarker(Canvas overlay, TimelineLayout.Row row, Brush color)
+    {
+        var stage = row.Stage;
+        FrameworkElement glyph;
+        string tip;
+        switch (row.Edge)
+        {
+            case TimelineLayout.StageEdge.Deadline when stage.Deadline is { } deadline:
+                glyph = new Ellipse
+                {
+                    Width = 14, Height = 14, Fill = Brush("Surface"), Stroke = color,
+                    StrokeThickness = 1.5, StrokeDashArray = [2, 2]
+                };
+                tip = stage.DeadlineVia.Length > 0
+                    ? string.Format(Culture, Strings.DeadlineHint, deadline.ToString("d MMM yyyy", Culture), stage.DeadlineVia)
+                    : string.Format(Culture, Strings.Until, deadline.ToString("d MMM yyyy", Culture));
+                break;
+            case TimelineLayout.StageEdge.Expired when stage.Deadline is { } deadline:
+                glyph = EdgeBadge("!", Brush("Now"));
+                tip = string.Format(Culture, Strings.OverdueHint, deadline.ToString("d MMM yyyy", Culture));
+                break;
+            case TimelineLayout.StageEdge.Open:
+                glyph = EdgeBadge("›", Brush("Muted"));
+                tip = Strings.OpenEdgeHint;
+                break;
+            default:
+                return;
+        }
+        ToolTipService.SetToolTip(glyph, tip);
+        Canvas.SetLeft(glyph, Math.Max(0, row.Width - 22));
+        Canvas.SetTop(glyph, 19);
+        overlay.Children.Add(glyph);
+    }
+
+    private Grid EdgeBadge(string glyph, Brush stroke)
+    {
+        var badge = new Grid { Width = 16, Height = 16 };
+        badge.Children.Add(new Ellipse { Fill = Brush("Surface"), Stroke = stroke, StrokeThickness = 1.5 });
+        var text = Text(glyph, 11, "Text", true);
+        text.HorizontalAlignment = HorizontalAlignment.Center;
+        text.VerticalAlignment = VerticalAlignment.Center;
+        text.Foreground = stroke;
+        badge.Children.Add(text);
+        return badge;
+    }
+
+    private string StageRange(CourtStage stage)
+    {
+        string start = stage.Start.ToString("d MMM yyyy", Culture);
+        if (stage.State == CourtStageState.Completed || stage.Closed is not null)
+        {
+            var end = stage.Closed ?? stage.Deadline ?? stage.Start;
+            return $"{start} — {end.ToString("d MMM yyyy", Culture)}";
+        }
+        if (stage.Deadline is { } deadline)
+        {
+            string until = string.Format(Culture, Strings.Until, deadline.ToString("d MMM yyyy", Culture));
+            string range = stage.DeadlineVia.Length > 0 ? $"{start} — {until} · {stage.DeadlineVia}" : $"{start} — {until}";
+            return stage.State == CourtStageState.Potential ? range + " · " + Strings.Potential : range;
+        }
+        return stage.State == CourtStageState.Potential ? $"{start} · {Strings.Potential}" : $"{start} — {Strings.OpenEdgeHint}";
     }
 
     private Button ItemButton(UIElement content, CourtTimelineSelection selection, string name, string note)
@@ -201,7 +314,9 @@ public sealed partial class CourtTimelineView
         else if (stage is not null)
         {
             Add(Strings.Stage + " · " + stage.Status, 10, "Brand"); Add(stage.Title, 15, bold: true);
-            Add($"{stage.Start.ToString("d MMM yyyy", Culture)} — {stage.End.ToString("d MMM yyyy", Culture)}", 12, "Muted");
+            if (stage.PossibleFrom is { } possible)
+                Add(string.Format(Culture, Strings.PossibleFrom, possible.ToString("d MMM yyyy", Culture)), 12, "Muted");
+            Add(StageRange(stage), 12, "Muted");
             Add(stage.Court, 12, bold: true); Add(stage.Note, 12, "Muted");
         }
         else Add(Strings.SelectItem, 12, "Muted");

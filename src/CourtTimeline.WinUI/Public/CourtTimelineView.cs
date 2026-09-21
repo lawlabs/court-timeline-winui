@@ -1,7 +1,6 @@
 using System.Globalization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Windows.UI.ViewManagement;
 
@@ -12,8 +11,6 @@ public sealed partial class CourtTimelineView : UserControl
 {
     public static readonly DependencyProperty DataProperty = DependencyProperty.Register(
         nameof(Data), typeof(object), typeof(CourtTimelineView), new PropertyMetadata(null, VisualChanged));
-    public static readonly DependencyProperty ShowPlanProperty = DependencyProperty.Register(
-        nameof(ShowPlan), typeof(bool), typeof(CourtTimelineView), new PropertyMetadata(true, VisualChanged));
     public static readonly DependencyProperty ZoomProperty = DependencyProperty.Register(
         nameof(Zoom), typeof(double), typeof(CourtTimelineView), new PropertyMetadata(1d, VisualChanged));
     public static readonly DependencyProperty SelectedItemProperty = DependencyProperty.Register(
@@ -24,7 +21,6 @@ public sealed partial class CourtTimelineView : UserControl
         nameof(ShowDetails), typeof(bool), typeof(CourtTimelineView), new PropertyMetadata(true, VisualChanged));
 
     public CourtTimelineData? Data { get => GetValue(DataProperty) as CourtTimelineData; set => SetValue(DataProperty, value); }
-    public bool ShowPlan { get => (bool)GetValue(ShowPlanProperty); set => SetValue(ShowPlanProperty, value); }
     /// <summary>Horizontal scale in [1,4]. One fits the viewport (minimum content width 480 DIPs).</summary>
     public double Zoom { get => (double)GetValue(ZoomProperty); set => SetValue(ZoomProperty, value); }
     public CourtTimelineSelection? SelectedItem { get => GetValue(SelectedItemProperty) as CourtTimelineSelection; set => SetValue(SelectedItemProperty, value); }
@@ -44,7 +40,6 @@ public sealed partial class CourtTimelineView : UserControl
     private readonly Grid _toolbar = new() { ColumnSpacing = 12, RowSpacing = 8 };
     private readonly StackPanel _summary = new() { Orientation = Orientation.Horizontal, Spacing = 12 };
     private readonly StackPanel _actions = new() { Orientation = Orientation.Horizontal, Spacing = 4 };
-    private readonly ToggleButton _plan = new() { FontSize = 11, Padding = new Thickness(10, 5, 10, 5) };
     private readonly Button _zoomOut = new() { Content = "−" };
     private readonly Button _zoomIn = new() { Content = "+" };
     private readonly Button _fit = new() { FontSize = 11 };
@@ -76,7 +71,7 @@ public sealed partial class CourtTimelineView : UserControl
         _toolbar.RowDefinitions.Add(new() { Height = GridLength.Auto });
         _toolbar.RowDefinitions.Add(new() { Height = GridLength.Auto });
         _toolbar.Children.Add(_summary);
-        _actions.Children.Add(_plan); _actions.Children.Add(_zoomOut); _actions.Children.Add(_fit); _actions.Children.Add(_zoomIn);
+        _actions.Children.Add(_zoomOut); _actions.Children.Add(_fit); _actions.Children.Add(_zoomIn);
         _toolbar.Children.Add(_actions);
         _scroller.Content = _canvas;
         var timeline = new Grid();
@@ -85,7 +80,6 @@ public sealed partial class CourtTimelineView : UserControl
         _frame.Child = timeline;
         AddRow(_header, 0); AddRow(_toolbar, 1); AddRow(_frame, 2); AddRow(_details, 3);
         Content = _root;
-        _plan.Click += (_, _) => ShowPlan = _plan.IsChecked == true;
         _zoomIn.Click += (_, _) => Zoom = Math.Min(4, Zoom + .5);
         _zoomOut.Click += (_, _) => Zoom = Math.Max(1, Zoom - .5);
         _fit.Click += (_, _) => FitToView();
@@ -158,7 +152,7 @@ public sealed partial class CourtTimelineView : UserControl
             var focus = XamlRoot is null ? null : FocusManager.GetFocusedElement(XamlRoot) as Button;
             var focusSelection = focus is not null && _canvas.Children.Contains(focus) ? focus.Tag as CourtTimelineSelection : null;
             var focusState = focus?.FocusState ?? FocusState.Unfocused;
-            _layout = Data is { } data ? TimelineLayout.Calculate(data, TodayMark(data).Date, ShowPlan,
+            _layout = Data is { } data ? TimelineLayout.Calculate(data, TodayMark(data).Date,
                 Math.Max(1, _scroller.ViewportWidth > 0 ? _scroller.ViewportWidth : ActualWidth - 50), Zoom) : null;
             if (SelectedItem is { } selection && (_layout is null || !_layout.Contains(selection))) SelectedItem = null;
             RenderShell();
@@ -173,7 +167,7 @@ public sealed partial class CourtTimelineView : UserControl
             {
                 var target = _canvas.Children.OfType<Button>().FirstOrDefault(b => Equals(b.Tag, focusSelection));
                 if (target is not null) target.Focus(focusState);
-                else _plan.Focus(focusState);
+                else _fit.Focus(focusState);
             }
         }
         finally { _rendering = false; }

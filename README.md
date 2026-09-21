@@ -2,16 +2,16 @@
 
 [![CI](https://github.com/lawlabs/court-timeline-winui/actions/workflows/ci.yml/badge.svg)](https://github.com/lawlabs/court-timeline-winui/actions/workflows/ci.yml)
 
-Standalone **WinUI 3** control for a court case timeline: stages, actual and planned periods, hearings and other events. The host application owns the data, storage and editing. There is no dependency on Kalends or LawMatic.
+Standalone **WinUI 3** control for a court case timeline: stages, factual periods, deadlines, hearings and other events. The host application owns the data, storage and editing. There is no dependency on Kalends or LawMatic.
 
 The library is extracted from the Windows `lawmatic-calendar-windows` prototype on `codex/court-timeline-demo`. It is a separate control, not a sixth `KalendsMode`.
 
 ## Features
 
 - One row per court stage, with inclusive closing dates.
-- Actual periods, hatched plans, dashed potential stages and a current-date marker.
+- Factual periods, waiting windows, promised deadlines, open and overdue edges, potential stages and a current-date marker.
 - Stage/event selection, optional case header and details panel.
-- Zoom, fit to viewport, horizontal/vertical scrolling and a plan toggle.
+- Zoom, fit to viewport, and horizontal/vertical scrolling.
 - Event labels use as many lanes as necessary to avoid overlaps.
 - Light, dark and Windows high contrast; keyboard-focusable stage/event buttons.
 - Russian and English UI strings, configurable date culture and resource overrides.
@@ -64,7 +64,8 @@ Timeline.Data = new CourtTimelineData
     {
         Id = "appeal", Title = "Апелляция", Court = "9-й арбитражный АС",
         State = CourtStageState.Active, Status = "В производстве",
-        Start = new DateOnly(2026, 8, 4), End = new DateOnly(2026, 10, 16)
+        Start = new DateOnly(2026, 8, 4),
+        Deadline = new DateOnly(2026, 10, 16), DeadlineVia = "план завершения"
     }],
     Events = [new CourtEvent
     {
@@ -85,7 +86,6 @@ Timeline.SelectedItem = new(CourtTimelineItemKind.Event, "hearing");
 | Property / method | Purpose |
 | --- | --- |
 | `Data` | A `CourtTimelineData` snapshot; null displays an empty state |
-| `ShowPlan` | Show planned events and potential stages; true by default |
 | `Zoom` / `FitToView()` | Scale 1–4; fit uses the available width, with a minimum of 480 DIPs |
 | `SelectedItem` | `CourtTimelineSelection` with item kind and ID, or null |
 | `SelectionChanged` | Selection plus the selected event and its parent stage, or the selected stage |
@@ -93,13 +93,15 @@ Timeline.SelectedItem = new(CourtTimelineItemKind.Event, "hearing");
 | `Culture`, `Strings` | Date formatting and visible UI text |
 | `Refresh()` | Refresh after in-place collection changes or resource overrides |
 
-`Data`, `ShowPlan`, `Zoom`, `SelectedItem`, `ShowCaseHeader` and `ShowDetails` are dependency properties and support binding. Set data before setting an initial selection. Use `Mode=TwoWay` if the view model should receive user changes to selection, zoom or the plan toggle. Invalid/hidden selections clear to null. Selections remain stable by kind and ID across redraws; stage and event IDs can coincide.
+`Data`, `Zoom`, `SelectedItem`, `ShowCaseHeader` and `ShowDetails` are dependency properties and support binding. Set data before setting an initial selection. Use `Mode=TwoWay` if the view model should receive user changes to selection or zoom. Invalid/hidden selections clear to null. Selections remain stable by kind and ID across redraws; stage and event IDs can coincide.
 
 The records are snapshots with `IReadOnlyList` collections. Prefer assigning a new `Data` value after editing. The control does not subscribe to collection/item change notifications; call `Refresh()` for in-place changes. All control operations must run on the UI thread.
 
-Dates use `DateOnly`: no time zone or daylight-saving arithmetic. `Data.End` is exclusive; `CourtStage.End` includes the complete last day. Stages/events outside the axis are clipped/omitted. `Data.Today` is an optional reference-date override for demos; null follows the local clock and updates once a minute while loaded. `Data.Now` places the today marker at that time of day. When both are null the marker follows the clock; when only `Today` is set the marker stays at midday. An active stage is factual through today and planned afterwards, bounded by its own dates. Completed stages are factual and potential stages are planned. Event `Planned` flags are supplied by the host, independently of the date. No legal deadlines are calculated.
+Dates use `DateOnly`: no time zone or daylight-saving arithmetic. `Data.End` is an exclusive axis boundary. `Closed` and `Deadline` include the complete last day. Stages and events outside the axis are clipped or omitted. `Data.Today` pins the calendar day for demos; null follows the local date and updates once a minute while loaded. The today marker is the left edge of that day, and the whole day counts as fact. `Data.Now` is only the clock on the label. When both are null the label shows the local time; when only `Today` is set the label has no time.
 
-Nonempty IDs must be unique within stages and within events, and every event must reference an existing stage. An inverted stage range, invalid axis, unknown enum value or invalid ID/reference throws `ArgumentException`. A null `Stages` or `Events` collection throws `ArgumentNullException`.
+An active stage is solid from `Start` through today. A future `Deadline` is the only hatched tail; without one the bar stops at today. A `Deadline` on or before today draws no hatch into the past and marks the bar overdue. `Closed`, or state `Completed`, is entirely fact through that day. `PossibleFrom` before `Start` is a waiting hatch on the left. A potential stage is hatched from `Start` through `Deadline`. A linked event can extend its stage through that event's day. Event `Planned` is a host flag, independent of the date. The control calculates no legal deadline.
+
+Nonempty IDs must be unique within stages and within events, and every event must reference an existing stage. `PossibleFrom` on or after `Start`, `Closed` or `Deadline` before `Start`, an invalid axis, an unknown enum value or an invalid ID or reference throws `ArgumentException`. A null `Stages` or `Events` collection throws `ArgumentNullException`.
 
 ## Localization and theme
 

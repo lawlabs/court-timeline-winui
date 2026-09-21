@@ -9,13 +9,13 @@ public sealed class TimelineLayoutTests
 {
     private static DateOnly Date(int day) => new(2026, 9, day);
     private static CourtStage Stage(string id = "stage", CourtStageState state = CourtStageState.Active) => new()
-    { Id = id, Start = Date(3), End = Date(25), State = state };
+    { Id = id, Start = Date(3), Deadline = Date(25), State = state };
     private static CourtEvent Event(string id, int day = 10, bool planned = false) => new()
     { Id = id, StageId = "stage", Date = Date(day), Planned = planned };
     private static CourtTimelineData Data(params CourtEvent[] events) => new()
     { Start = Date(1), End = Date(30), Today = Date(19), Stages = [Stage()], Events = events };
-    private static TimelineLayout.Result Layout(CourtTimelineData data, bool plan = true, double width = 960, double zoom = 1) =>
-        TimelineLayout.Calculate(data, data.Today ?? Date(19), plan, width, zoom);
+    private static TimelineLayout.Result Layout(CourtTimelineData data, double width = 960, double zoom = 1) =>
+        TimelineLayout.Calculate(data, data.Today ?? Date(19), width, zoom);
 
     [TestMethod]
     public void SampleFixtureContainsThreeStagesAndEightEvents()
@@ -24,15 +24,12 @@ public sealed class TimelineLayoutTests
         var layout = Layout(data);
         Assert.HasCount(3, layout.Rows);
         Assert.AreEqual(8, layout.Rows.Sum(row => row.Events.Count));
-        var actual = Layout(data, plan: false);
-        Assert.HasCount(2, actual.Rows);
-        Assert.AreEqual(6, actual.Rows.Sum(row => row.Events.Count));
     }
 
     [TestMethod]
     public void StageEndIncludesTheWholeLastDay()
     {
-        var layout = Layout(Data() with { Stages = [Stage() with { Start = Date(10), End = Date(10), State = CourtStageState.Completed }] });
+        var layout = Layout(Data() with { Stages = [Stage() with { Start = Date(10), Closed = Date(10), Deadline = null, State = CourtStageState.Completed }] });
         Assert.AreEqual(layout.DayWidth, layout.Rows.Single().Width, 1e-8);
         Assert.AreEqual(layout.Rows[0].Width, layout.Rows[0].FactWidth, 1e-8);
     }
@@ -41,36 +38,83 @@ public sealed class TimelineLayoutTests
     public void ActiveStageFactIncludesTodayAndPlanStartsTomorrow()
     {
         var full = Layout(Data());
-        var actual = Layout(Data(), plan: false);
         Assert.AreEqual(17 * full.DayWidth, full.Rows[0].FactWidth, 1e-8);
-        Assert.AreEqual(full.Rows[0].FactWidth, actual.Rows[0].Width, 1e-8);
-        Assert.AreEqual(Date(19), actual.Rows[0].VisualEnd);
+        Assert.IsGreaterThan(full.Rows[0].FactWidth, full.Rows[0].Width);
+        Assert.AreEqual(TimelineLayout.StageEdge.Deadline, full.Rows[0].Edge);
+        Assert.AreEqual(Date(25), full.Rows[0].VisualEnd);
     }
 
     [TestMethod]
     public void FutureActiveStageHasNoFactOrNegativeWidth()
     {
-        var data = Data() with { Today = Date(1) };
-        Assert.AreEqual(0d, Layout(data).Rows.Single().FactWidth);
-        Assert.HasCount(0, Layout(data, plan: false).Rows);
+        var row = Layout(Data() with { Today = Date(1) }).Rows.Single();
+        Assert.AreEqual(0d, row.FactWidth);
+        Assert.IsGreaterThan(0d, row.Width);
     }
 
     [TestMethod]
-    public void TodayAfterStageEndDoesNotExtendStage()
+    public void ClosedStageStaysAtItsCloseWhenTodayIsLater()
     {
-        var row = Layout(Data() with { Today = Date(29) }, plan: false).Rows.Single();
+        var stage = Stage(state: CourtStageState.Completed) with { Closed = Date(25), Deadline = null };
+        var row = Layout(Data() with { Today = Date(29), Stages = [stage] }).Rows.Single();
         Assert.AreEqual(row.Width, row.FactWidth);
+        Assert.AreEqual(Date(25), row.VisualEnd);
+        Assert.AreEqual(TimelineLayout.StageEdge.None, row.Edge);
+    }
+
+    [TestMethod]
+    public void ExpiredDeadlineExtendsToTodayWithoutAPastHatch()
+    {
+        var row = Layout(Data() with { Today = Date(29), Stages = [Stage() with { Deadline = Date(10) }] }).Rows.Single();
+        Assert.AreEqual(Date(29), row.VisualEnd);
+        Assert.AreEqual(row.Width, row.FactWidth, 1e-8);
+        Assert.AreEqual(0d, row.LeadWidth);
+        Assert.AreEqual(TimelineLayout.StageEdge.Expired, row.Edge);
+    }
+
+    [TestMethod]
+    public void OpenActiveStageEndsTodayWithoutHatch()
+    {
+        var layout = Layout(Data() with { Stages = [Stage() with { Deadline = null }] });
+        var row = layout.Rows.Single();
+        Assert.AreEqual(17 * layout.DayWidth, row.Width, 1e-8);
+        Assert.AreEqual(row.Width, row.FactWidth, 1e-8);
+        Assert.AreEqual(Date(3), row.VisualStart);
+        Assert.AreEqual(Date(19), row.VisualEnd);
+        Assert.AreEqual(TimelineLayout.StageEdge.Open, row.Edge);
+    }
+
+    [TestMethod]
+    public void WaitingWindowIsHatchedAndIsNotFact()
+    {
+        var layout = Layout(Data() with { Stages = [Stage() with { PossibleFrom = Date(1) }] });
+        var row = layout.Rows.Single();
+        Assert.AreEqual(2 * layout.DayWidth, row.LeadWidth, 1e-8);
+        Assert.AreEqual(17 * layout.DayWidth, row.FactWidth, 1e-8);
+        Assert.AreEqual(Date(1), row.VisualStart);
         Assert.AreEqual(Date(25), row.VisualEnd);
     }
 
     [TestMethod]
-    public void HidingPlanWorksWithoutAnActiveStage()
+    public void LinkedEventExtendsAnOpenStagePastToday()
+    {
+        var layout = Layout(Data(Event("hearing", 25)) with { Stages = [Stage() with { Deadline = null }] });
+        var row = layout.Rows.Single();
+        Assert.AreEqual(17 * layout.DayWidth, row.FactWidth, 1e-8);
+        Assert.AreEqual(23 * layout.DayWidth, row.Width, 1e-8);
+        Assert.AreEqual(Date(25), row.VisualEnd);
+        Assert.AreEqual(TimelineLayout.StageEdge.Open, row.Edge);
+    }
+
+    [TestMethod]
+    public void PotentialStageKeepsItsPlannedEvent()
     {
         var data = Data(Event("future", planned: true)) with { Stages = [Stage(state: CourtStageState.Potential)] };
-        var layout = Layout(data, plan: false);
-        Assert.HasCount(0, layout.Rows);
-        Assert.IsFalse(layout.Contains(new(CourtTimelineItemKind.Event, "future")));
-        Assert.IsFalse(layout.Contains(new(CourtTimelineItemKind.Stage, "stage")));
+        var layout = Layout(data);
+        var row = layout.Rows.Single();
+        Assert.AreEqual(0d, row.FactWidth);
+        Assert.IsGreaterThan(0d, row.Width);
+        Assert.IsTrue(layout.Contains(new(CourtTimelineItemKind.Event, "future")));
     }
 
     [TestMethod]
@@ -107,7 +151,7 @@ public sealed class TimelineLayoutTests
     public void AxisClipsBandsAndUsesExclusiveEndForEvents()
     {
         var data = Data(Event("left", 1), Event("inside", 15), Event("right", 30)) with
-        { Start = Date(5), End = Date(20), Stages = [Stage() with { Start = Date(1), End = Date(30) }] };
+        { Start = Date(5), End = Date(20), Stages = [Stage() with { Start = Date(1), Deadline = Date(30) }] };
         var layout = Layout(data);
         var row = layout.Rows.Single();
         Assert.AreEqual(TimelineLayout.LabelWidth, row.Left);
@@ -138,7 +182,7 @@ public sealed class TimelineLayoutTests
         var data = new CourtTimelineData
         {
             Start = new(9999, 12, 1), End = DateOnly.MaxValue, Today = DateOnly.MaxValue,
-            Stages = [new() { Id = "last", Start = new(9999, 12, 1), End = DateOnly.MaxValue }]
+            Stages = [new() { Id = "last", Start = new(9999, 12, 1), Closed = DateOnly.MaxValue }]
         };
         Assert.IsGreaterThan(0d, Layout(data).Rows.Single().Width);
     }
@@ -149,7 +193,7 @@ public sealed class TimelineLayoutTests
         var data = new CourtTimelineData
         {
             Start = new(2023, 12, 31), End = new(2024, 3, 1),
-            Stages = [new() { Id = "leap", Start = new(2024, 2, 28), End = new(2024, 2, 29) }]
+            Stages = [new() { Id = "leap", Start = new(2024, 2, 28), Closed = new(2024, 2, 29) }]
         };
         var layout = Layout(data);
         Assert.AreEqual(2 * layout.DayWidth, layout.Rows.Single().Width, 1e-8);
@@ -158,7 +202,7 @@ public sealed class TimelineLayoutTests
     [TestMethod]
     public void StageAndEventCanHaveSameIdWithoutSelectionCollision()
     {
-        var layout = Layout(Data(Event("stage", planned: true)), plan: false);
+        var layout = Layout(Data(Event("stage", day: 30)));
         Assert.IsTrue(layout.Contains(new(CourtTimelineItemKind.Stage, "stage")));
         Assert.IsFalse(layout.Contains(new(CourtTimelineItemKind.Event, "stage")));
     }
@@ -167,7 +211,9 @@ public sealed class TimelineLayoutTests
     public void InvalidRangesIdsAndReferencesAreRejected()
     {
         Assert.ThrowsExactly<ArgumentException>(() => Layout(Data() with { End = Date(1) }));
-        Assert.ThrowsExactly<ArgumentException>(() => Layout(Data() with { Stages = [Stage() with { End = Date(1) }] }));
+        Assert.ThrowsExactly<ArgumentException>(() => Layout(Data() with { Stages = [Stage() with { Deadline = Date(1) }] }));
+        Assert.ThrowsExactly<ArgumentException>(() => Layout(Data() with { Stages = [Stage() with { Closed = Date(1) }] }));
+        Assert.ThrowsExactly<ArgumentException>(() => Layout(Data() with { Stages = [Stage() with { PossibleFrom = Date(3) }] }));
         Assert.ThrowsExactly<ArgumentException>(() => Layout(Data() with { Stages = [Stage(), Stage()] }));
         Assert.ThrowsExactly<ArgumentException>(() => Layout(Data(Event("same"), Event("same"))));
         Assert.ThrowsExactly<ArgumentException>(() => Layout(Data(Event("orphan") with { StageId = "missing" })));

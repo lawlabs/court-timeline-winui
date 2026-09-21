@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Windows.Graphics;
@@ -24,6 +25,7 @@ public sealed partial class SampleWindow : Window
         };
         _ready = true;
         ScenarioPicker.SelectedIndex = 0;
+        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "CourtTimeline.ico"));
         AppWindow.Resize(new SizeInt32(1280, 960));
     }
 
@@ -37,7 +39,6 @@ public sealed partial class SampleWindow : Window
         if (LiveNowToggle.IsChecked == true) ShowClock();
         else ShowScenarioDate(data);
         Timeline.SelectedItem = null;
-        Timeline.ShowPlan = true;
         Timeline.Data = WithNow(data);
         ScenarioNote.Text = scenario.Description;
         Timeline.FitToView();
