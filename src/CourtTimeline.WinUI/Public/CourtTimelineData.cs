@@ -13,6 +13,8 @@ public sealed record CourtTimelineData
     public required DateOnly End { get; init; }
     /// <summary>Override for reproducible previews. Null uses the local current date.</summary>
     public DateOnly? Today { get; init; }
+    /// <summary>Time of day of the today marker. Null with <see cref="Today"/> set keeps the marker at midday. Both null follow the local clock.</summary>
+    public TimeOnly? Now { get; init; }
     public string Number { get; init; } = "";
     public string Title { get; init; } = "";
     public string Subject { get; init; } = "";

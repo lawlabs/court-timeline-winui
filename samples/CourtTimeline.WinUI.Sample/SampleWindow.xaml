@@ -29,6 +29,13 @@
             <ComboBoxItem Content="Русский" />
             <ComboBoxItem Content="English" />
           </ComboBox>
+          <CheckBox x:Name="LiveNowToggle" Content="Сейчас" VerticalAlignment="Bottom" Margin="0,0,0,6"
+                    Checked="LiveNow_Changed" Unchecked="LiveNow_Changed"
+                    AutomationProperties.AutomationId="LiveNowToggle" />
+          <CalendarDatePicker x:Name="NowDate" Header="Дата «сегодня»" Width="168"
+                              DateChanged="NowDate_Changed" AutomationProperties.AutomationId="NowDate" />
+          <TimePicker x:Name="NowTime" Header="Время" Width="132" ClockIdentifier="24HourClock" MinuteIncrement="1"
+                      SelectedTimeChanged="NowTime_Changed" AutomationProperties.AutomationId="NowTime" />
         </StackPanel>
       </ScrollViewer>
       <StackPanel Orientation="Horizontal" Spacing="16">

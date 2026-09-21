@@ -158,7 +158,7 @@ public sealed partial class CourtTimelineView : UserControl
             var focus = XamlRoot is null ? null : FocusManager.GetFocusedElement(XamlRoot) as Button;
             var focusSelection = focus is not null && _canvas.Children.Contains(focus) ? focus.Tag as CourtTimelineSelection : null;
             var focusState = focus?.FocusState ?? FocusState.Unfocused;
-            _layout = Data is { } data ? TimelineLayout.Calculate(data, data.Today ?? DateOnly.FromDateTime(DateTime.Today), ShowPlan,
+            _layout = Data is { } data ? TimelineLayout.Calculate(data, TodayMark(data).Date, ShowPlan,
                 Math.Max(1, _scroller.ViewportWidth > 0 ? _scroller.ViewportWidth : ActualWidth - 50), Zoom) : null;
             if (SelectedItem is { } selection && (_layout is null || !_layout.Contains(selection))) SelectedItem = null;
             RenderShell();

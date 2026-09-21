@@ -93,14 +93,17 @@ public sealed partial class CourtTimelineView
                 number.Width = layout.DayWidth; number.TextAlignment = TextAlignment.Center; Put(number, X(date), 46);
             }
         }
-        var today = data.Today ?? DateOnly.FromDateTime(DateTime.Today);
-        if (today >= data.Start && today < data.End)
+        var mark = TodayMark(data);
+        if (mark.Date >= data.Start && mark.Date < data.End)
         {
-            double point = X(today) + layout.DayWidth / 2;
+            double point = X(mark.Date) + layout.DayWidth * mark.Fraction;
             Line(point, 44, point, layout.Height, Brush("Now"), true);
+            string caption = mark.Time is { } time
+                ? $"{Day(mark.Date)} · {time.ToString("t", Culture)} · {Strings.Today}"
+                : $"{Day(mark.Date)} · {Strings.Today}";
             var label = new Border { Background = Brush("Surface"), Padding = new Thickness(5, 2, 5, 2),
-                Child = Text($"{Day(today)} · {Strings.Today}", 9, "Now", true), MaxWidth = 170 };
-            Put(label, Math.Clamp(point - 72, TimelineLayout.LabelWidth, layout.Width - 175), 45);
+                Child = Text(caption, 9, "Now", true), MaxWidth = 230 };
+            Put(label, Math.Clamp(point - 72, TimelineLayout.LabelWidth, layout.Width - 236), 45);
         }
         foreach (var row in layout.Rows) RenderRow(row);
     }
@@ -154,6 +157,18 @@ public sealed partial class CourtTimelineView
             button.BorderThickness = new Thickness(selection == SelectedItem ? 2 : 1);
             Canvas.SetZIndex(button, 2); Put(button, placement.Left, labelTop);
         }
+    }
+
+    private readonly record struct TodayMarker(DateOnly Date, double Fraction, TimeOnly? Time);
+    private static TodayMarker TodayMark(CourtTimelineData data)
+    {
+        if (data.Today is { } pinned)
+        {
+            double fraction = data.Now is { } time ? time.ToTimeSpan().TotalHours / 24d : 0.5;
+            return new(pinned, fraction, data.Now);
+        }
+        var now = DateTime.Now;
+        return new(DateOnly.FromDateTime(now), now.TimeOfDay.TotalHours / 24d, TimeOnly.FromDateTime(now));
     }
 
     private Button ItemButton(UIElement content, CourtTimelineSelection selection, string name, string note)
