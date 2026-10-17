@@ -43,6 +43,9 @@ internal static class TimelineTheme
     {
         if (highContrast) return Get(owner, faint ? "Surface" : "Text", true);
         bool dark = owner.ActualTheme == ElementTheme.Dark;
+        string key = "CourtTimeline" + tone + (faint ? "Faint" : "") + "Brush";
+        if (Find(owner.Resources, dark ? "Dark" : "Light", key) is { } local) return local;
+        if (Find(Application.Current?.Resources, dark ? "Dark" : "Light", key) is { } app) return app;
         uint rgb = tone switch
         {
             CourtStageTone.Blue => dark ? 0x7CB3F1u : 0x3979BBu,
@@ -60,7 +63,14 @@ internal static class TimelineTheme
         if (dictionary is null) return null;
         if (dictionary.ThemeDictionaries.TryGetValue(theme, out var value) && value is ResourceDictionary themed
             && themed.TryGetValue(key, out var themedBrush) && themedBrush is Brush result) return result;
-        if (dictionary.TryGetValue(key, out var direct) && direct is Brush brush) return brush;
+        // ResourceDictionary.TryGetValue on the app dictionary also resolves merged theme
+        // resources using Application.RequestedTheme, which can differ from the owner's
+        // explicit theme. Inspect direct entries before traversing the requested theme.
+        // Enumerating XamlControlsResources materializes deferred framework
+        // resources. A missing custom key must never enumerate that dictionary.
+        if (dictionary.ContainsKey(key))
+            foreach (var entry in dictionary)
+                if (Equals(entry.Key, key) && entry.Value is Brush brush) return brush;
         for (int i = dictionary.MergedDictionaries.Count - 1; i >= 0; i--)
             if (Find(dictionary.MergedDictionaries[i], theme, key) is { } merged) return merged;
         return null;

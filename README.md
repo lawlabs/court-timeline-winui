@@ -12,7 +12,7 @@ The library is extracted from the Windows `lawmatic-calendar-windows` prototype 
 - Factual periods, waiting windows, promised deadlines, open and overdue edges, potential stages and a current-date marker.
 - Stage/event selection, optional case header and details panel.
 - Zoom, fit to viewport, and horizontal/vertical scrolling.
-- Event labels use as many lanes as necessary to avoid overlaps.
+- Event labels use at most three non-overlapping lanes per stage; an overflow button opens the remaining events for selection.
 - Light, dark and Windows high contrast; keyboard-focusable stage/event buttons.
 - Russian and English UI strings, configurable date culture and resource overrides.
 - Pure date/layout tests runnable on macOS, Linux and Windows.
@@ -97,6 +97,10 @@ Timeline.SelectedItem = new(CourtTimelineItemKind.Event, "hearing");
 
 The records are snapshots with `IReadOnlyList` collections. Prefer assigning a new `Data` value after editing. The control does not subscribe to collection/item change notifications; call `Refresh()` for in-place changes. All control operations must run on the UI thread.
 
+Rendering waits for a measured `ScrollViewer` viewport. Repeated size notifications reuse geometry when data, effective width, zoom and the calendar day are unchanged. Selection updates the existing controls and details; the minute clock updates only its caption until the day changes. Explicit `Refresh()` still forces a rebuild after in-place data or resource changes.
+
+Dense stages keep at most three label lanes plus an overflow button, limiting each stage to 264 DIPs. The button opens the remaining events in chronological order with full dates, and selecting an entry uses the same `SelectedItem` and `SelectionChanged` API as an ordinary event. The total event count includes overflow events. Override `Strings.MoreEvents` to customize the button text (`{0}` is the count).
+
 Dates use `DateOnly`: no time zone or daylight-saving arithmetic. `Data.End` is an exclusive axis boundary. `Closed` and `Deadline` include the complete last day. Stages and events outside the axis are clipped or omitted. `Data.Today` pins the calendar day for demos; null follows the local date and updates once a minute while loaded. The today marker is the left edge of that day, and the whole day counts as fact. `Data.Now` is only the clock on the label. When both are null the label shows the local time; when only `Today` is set the label has no time.
 
 An active stage is solid from `Start` through today. A future `Deadline` is the only hatched tail; without one the bar stops at today. A `Deadline` on or before today draws no hatch into the past and marks the bar overdue. `Closed`, or state `Completed`, is entirely fact through that day. `PossibleFrom` before `Start` is a waiting hatch on the left. A potential stage is hatched from `Start` through `Deadline`. A linked event can extend its stage through that event's day. Event `Planned` is a host flag, independent of the date. The control calculates no legal deadline.
@@ -115,7 +119,7 @@ Override `CourtTimelineSurfaceBrush`, `CourtTimelineShellBrush`, `CourtTimelineT
 
 ## Sample and verification
 
-A standalone [visual test app](samples/CourtTimeline.WinUI.Sample/README.md) is included. It has six data scenarios, theme/language selectors, header/details toggles, a reset button, and a selection status line.
+A standalone [visual test app](samples/CourtTimeline.WinUI.Sample/README.md) is included. It has sparse, dense and two-year/109-event scenarios, theme/language selectors, header/details toggles, a reset button, and a selection status line.
 
 On Windows, run it from the repository root:
 

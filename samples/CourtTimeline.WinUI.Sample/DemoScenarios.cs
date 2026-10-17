@@ -25,11 +25,29 @@ internal static class DemoScenarios
         new("Ещё не началась",
             "Фактической карточки нет. Вся полоса — предложение начать стадию, с черновым концом 17 декабря.",
             NotStarted, new(CourtTimelineItemKind.Event, "possible-hearing")),
-        new("Много событий в один день", "Четырнадцать дополнительных событий на 14 августа. Проверьте подписи и вертикальную прокрутку.", Dense),
+        new("Много событий в один день", "Три ряда подписей и кнопка остальных событий. Проверьте выбор события из всплывающего меню.", Dense),
+        new("109 событий за два года", "Открытая стадия без срока закрытия. Высота ограничена; остальные события доступны по кнопке. Проверьте изменение ширины и отсутствие роста памяти в покое.", LongHistory),
         new("Новый год и 29 февраля", "Декабрь 2027 — март 2028. Закрытая стадия переходит через новый год, заседание стоит на 29 февраля.", YearBoundary),
         new("Пустое дело", "Карточка дела без стадий и событий. Счётчики должны показывать нули.", EmptyCase),
         new("Нет выбранного дела", "Данные отсутствуют. Шапка дела скрывается, старые детали очищаются.", () => null)
     ];
+
+    private static CourtTimelineData LongHistory()
+    {
+        var start = new DateOnly(2024, 8, 1);
+        var end = new DateOnly(2026, 12, 1);
+        return new()
+        {
+            Number = "ДЕМО-109", Title = "Длинная история открытой стадии", Start = start, End = end,
+            Stages = [new() { Id = "long", Title = "Первая инстанция", Court = "Демонстрационный суд",
+                Start = start, State = CourtStageState.Active, Status = "В производстве" }],
+            Events = Enumerable.Range(0, 109).Select(i => new CourtEvent
+            {
+                Id = $"history-{i:000}", StageId = "long", Date = start.AddDays(i * (end.DayNumber - start.DayNumber - 1) / 108),
+                Title = $"Документ {i + 1}", Kind = "Документ", Note = "Событие должно оставаться доступным при любом масштабе."
+            }).ToArray()
+        };
+    }
 
     private static CourtTimelineData Dense()
     {

@@ -9,6 +9,7 @@
     <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
     <Compile Include="../../src/CourtTimeline.WinUI/Public/CourtTimelineData.cs" Link="Library/CourtTimelineData.cs" />
     <Compile Include="../../src/CourtTimeline.WinUI/Internal/TimelineLayout.cs" Link="Library/TimelineLayout.cs" />
+    <Compile Include="../../src/CourtTimeline.WinUI/Internal/TimelineLayoutCache.cs" Link="Library/TimelineLayoutCache.cs" />
     <Compile Include="../../samples/CourtTimeline.WinUI.Sample/DemoData.cs" Link="Sample/DemoData.cs" />
     <EmbeddedResource Include="../../samples/CourtTimeline.WinUI.Sample/court-timeline.json" LogicalName="CourtTimeline.Sample.Demo.json" />
   </ItemGroup>

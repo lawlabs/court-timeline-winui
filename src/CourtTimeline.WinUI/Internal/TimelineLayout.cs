@@ -6,20 +6,22 @@ internal static class TimelineLayout
     internal const double LabelWidth = 166;
     internal const double EventWidth = 138;
     internal const double EventGap = 8;
+    internal const int MaxEventLanes = 3;
 
     internal sealed record EventPlacement(CourtEvent Event, double Point, double Left, int Lane);
     internal enum StageEdge { None, Open, Deadline, Expired }
 
     internal sealed record Row(CourtStage Stage, double Top, double Height, double Left,
         double Width, double LeadWidth, double FactWidth, StageEdge Edge, DateOnly VisualStart, DateOnly VisualEnd,
-        IReadOnlyList<EventPlacement> Events);
+        IReadOnlyList<EventPlacement> Events, IReadOnlyList<CourtEvent> OverflowEvents);
     internal sealed record Result(double Width, double Height, double DayWidth, IReadOnlyList<Row> Rows)
     {
         internal double X(DateOnly date, DateOnly start) => LabelWidth + (date.DayNumber - start.DayNumber) * DayWidth;
         internal bool Contains(CourtTimelineSelection selection) => selection.Kind switch
         {
             CourtTimelineItemKind.Stage => Rows.Any(row => row.Stage.Id == selection.Id && row.Width > 0),
-            CourtTimelineItemKind.Event => Rows.Any(row => row.Events.Any(e => e.Event.Id == selection.Id)),
+            CourtTimelineItemKind.Event => Rows.Any(row => row.Events.Any(e => e.Event.Id == selection.Id)
+                || row.OverflowEvents.Any(e => e.Id == selection.Id)),
             _ => false
         };
     }
@@ -110,6 +112,7 @@ internal static class TimelineLayout
             double left = X(drawStart);
             var laneEnds = new List<double>();
             var placements = new List<EventPlacement>();
+            var overflow = new List<CourtEvent>();
             foreach (var item in eventsByStage[stage.Id]
                 .Where(e => e.Date >= data.Start && e.Date < data.End)
                 .OrderBy(e => e.Date).ThenBy(e => e.Id, StringComparer.Ordinal))
@@ -117,21 +120,26 @@ internal static class TimelineLayout
                 double point = X(item.Date.DayNumber) + dayWidth / 2;
                 double labelLeft = Math.Clamp(point - 12, LabelWidth, width - EventWidth - 8);
                 int lane = laneEnds.FindIndex(laneEnd => laneEnd + EventGap <= labelLeft);
-                if (lane < 0) { lane = laneEnds.Count; laneEnds.Add(0); }
+                if (lane < 0)
+                {
+                    if (laneEnds.Count == MaxEventLanes) { overflow.Add(item); continue; }
+                    lane = laneEnds.Count;
+                    laneEnds.Add(0);
+                }
                 laneEnds[lane] = labelLeft + EventWidth;
                 placements.Add(new(item, point, labelLeft, lane));
             }
             bool hasBand = drawEnd > drawStart;
-            if (!hasBand && placements.Count == 0) continue;
+            if (!hasBand && placements.Count == 0 && overflow.Count == 0) continue;
             int leadDay = Math.Clamp(factStart, drawStart, drawEnd);
             int factDay = Math.Clamp(factEnd, drawStart, drawEnd);
             double lead = X(leadDay) - left;
             double fact = Math.Max(0, X(factDay) - X(Math.Max(drawStart, factStart)));
-            double height = Math.Max(164, 88 + laneEnds.Count * 44);
+            double height = Math.Max(164, 88 + (laneEnds.Count + (overflow.Count > 0 ? 1 : 0)) * 44);
             var visualStart = DateOnly.FromDayNumber(hasBand ? drawStart : stage.Start.DayNumber);
             var visualEnd = DateOnly.FromDayNumber(hasBand ? drawEnd - 1 : stage.Start.DayNumber);
             rows.Add(new(stage, top, height, left, hasBand ? X(drawEnd) - left : 0, lead, fact, hasBand ? edge : StageEdge.None,
-                visualStart, visualEnd, placements));
+                visualStart, visualEnd, placements, overflow));
             top += height;
         }
         return new(width, Math.Max(200, top), dayWidth, rows);

@@ -14,7 +14,7 @@ public sealed record CourtTimelineStrings
         Stage = "STAGE", Planned = "PLANNED", Occurred = "OCCURRED", Potential = "potential",
         Until = "until {0}", PossibleFrom = "Possible from {0}",
         DeadlineHint = "Draft end {0}: {1}", OverdueHint = "The {0} deadline has passed and the stage is still open",
-        OpenEdgeHint = "No closing date: the bar stops at today"
+        OpenEdgeHint = "No closing date: the bar stops at today", MoreEvents = "{0} more events"
     };
 
     public string CaseNumber { get; init; } = "ДЕЛО № {0}";
@@ -38,4 +38,5 @@ public sealed record CourtTimelineStrings
     public string DeadlineHint { get; init; } = "Черновой срок {0}: {1}";
     public string OverdueHint { get; init; } = "Срок {0} уже прошёл, а стадия не закрыта";
     public string OpenEdgeHint { get; init; } = "Срок закрытия не задан: полоса доходит до сегодня";
+    public string MoreEvents { get; init; } = "Ещё событий: {0}";
 }

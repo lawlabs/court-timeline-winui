@@ -10,8 +10,24 @@ namespace CourtTimeline;
 
 public sealed partial class CourtTimelineView
 {
-    private Brush Brush(string name) => TimelineTheme.Get(this, name, _highContrast);
-    private Brush Tone(CourtStage stage, bool faint = false) => TimelineTheme.Tone(this, stage.Tone, _highContrast, faint);
+    private readonly List<(Button Button, CourtTimelineSelection Selection, CourtStage Stage, Rectangle? Outline, TextBlock? Title)> _selectionVisuals = [];
+    private readonly List<(Button Button, TimelineLayout.Row Row)> _overflowButtons = [];
+    private TextBlock? _todayLabel;
+
+    private readonly Dictionary<string, Brush> _brushes = new(StringComparer.Ordinal);
+    private Brush Brush(string name)
+    {
+        if (!_brushes.TryGetValue(name, out var brush))
+            _brushes[name] = brush = TimelineTheme.Get(this, name, _highContrast);
+        return brush;
+    }
+    private Brush Tone(CourtStage stage, bool faint = false)
+    {
+        var key = $"Tone:{stage.Tone}:{faint}";
+        if (!_brushes.TryGetValue(key, out var brush))
+            _brushes[key] = brush = TimelineTheme.Tone(this, stage.Tone, _highContrast, faint);
+        return brush;
+    }
     private string Day(DateOnly date) => date.ToString("d MMM", Culture).TrimEnd('.');
     private TextBlock Text(string value, double size, string brush = "Text", bool bold = false) => new()
     {
@@ -32,9 +48,13 @@ public sealed partial class CourtTimelineView
     private void RenderShell()
     {
         _root.Background = Brush("Surface");
+        _root.Padding = CompactMode ? new Thickness(0, 0, 0, 4) : new Thickness(24, 6, 24, 16);
+        _root.RowSpacing = CompactMode ? 8 : 16;
+        _summary.Visibility = CompactMode ? Visibility.Collapsed : Visibility.Visible;
+        _legend.Visibility = CompactMode ? Visibility.Collapsed : Visibility.Visible;
         _header.Visibility = ShowCaseHeader && Data is not null ? Visibility.Visible : Visibility.Collapsed;
         _case.Children.Clear(); _amount.Children.Clear();
-        if (Data is { } data)
+        if (ShowCaseHeader && Data is { } data)
         {
             _case.Children.Add(Text((data.Number.Length > 0 ? string.Format(Culture, Strings.CaseNumber, data.Number) : "")
                 + (data.Status.Length > 0 ? " · " + data.Status : ""), 12, "Brand"));
@@ -44,10 +64,13 @@ public sealed partial class CourtTimelineView
             if (data.Amount.Length > 0) { _amount.Children.Add(Text(Strings.Amount, 11, "Muted")); _amount.Children.Add(Text(data.Amount, 22, bold: true)); }
         }
         _summary.Children.Clear();
-        _summary.Children.Add(Text(Strings.Progress, 14, bold: true));
-        _summary.Children.Add(Text(string.Format(Culture, Strings.Counts, _layout?.Rows.Count ?? 0,
-            _layout?.Rows.Sum(r => r.Events.Count) ?? 0), 11, "Muted"));
-        bool narrow = ActualWidth < 780;
+        if (!CompactMode)
+        {
+            _summary.Children.Add(Text(Strings.Progress, 14, bold: true));
+            _summary.Children.Add(Text(string.Format(Culture, Strings.Counts, _layout?.Rows.Count ?? 0,
+                _layout?.Rows.Sum(r => r.Events.Count + r.OverflowEvents.Count) ?? 0), 11, "Muted"));
+        }
+        bool narrow = !CompactMode && ActualWidth < 780;
         Grid.SetColumn(_actions, narrow ? 0 : 1); Grid.SetRow(_actions, narrow ? 1 : 0);
         Grid.SetColumnSpan(_summary, narrow ? 2 : 1); Grid.SetColumnSpan(_actions, narrow ? 2 : 1);
         _actions.HorizontalAlignment = narrow ? HorizontalAlignment.Left : HorizontalAlignment.Right;
@@ -56,6 +79,7 @@ public sealed partial class CourtTimelineView
         AutomationProperties.SetName(_fit, Strings.Fit);
         AutomationProperties.SetName(_zoomIn, Strings.ZoomIn); AutomationProperties.SetName(_zoomOut, Strings.ZoomOut);
         _frame.BorderBrush = Brush("Line"); _legend.Text = Strings.Legend; _legend.Foreground = Brush("Muted");
+        ToolTipService.SetToolTip(_frame, Strings.Legend);
         _details.Background = Brush("Shell"); _details.BorderBrush = Brush("Line");
         _details.Visibility = ShowDetails ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -64,7 +88,8 @@ public sealed partial class CourtTimelineView
     {
         double X(DateOnly date) => layout.X(date, data.Start);
         Put(new Border { Width = layout.Width, Height = 44, Background = Brush("Shell") }, 0, 0);
-        var axis = Text(Strings.Axis, 10, "Muted", true); axis.Width = TimelineLayout.LabelWidth - 20; Put(axis, 12, 15);
+        var axis = Text(Strings.Axis, 10, "Muted", true); axis.Width = TimelineLayout.LabelWidth - 20;
+        AutomationProperties.SetAutomationId(axis, "TimelineAxis"); Put(axis, 12, 15);
         var month = new DateOnly(data.Start.Year, data.Start.Month, 1);
         while (month < data.End)
         {
@@ -102,11 +127,9 @@ public sealed partial class CourtTimelineView
             };
             Put(wash, point, 44);
             Line(point, 44, point, layout.Height, Brush("Now"), true);
-            string caption = mark.Time is { } time
-                ? $"{Day(mark.Date)} · {time.ToString("t", Culture)} · {Strings.Today}"
-                : $"{Day(mark.Date)} · {Strings.Today}";
+            _todayLabel = Text("", 9, "Now", true);
             var label = new Border { Background = Brush("Surface"), Padding = new Thickness(5, 2, 5, 2),
-                Child = Text(caption, 9, "Now", true), MaxWidth = 230 };
+                Child = _todayLabel, MaxWidth = 230 };
             Put(label, Math.Clamp(point + 6, TimelineLayout.LabelWidth, layout.Width - 236), 45);
         }
         foreach (var row in layout.Rows) RenderRow(row);
@@ -147,8 +170,12 @@ public sealed partial class CourtTimelineView
                     HorizontalAlignment = HorizontalAlignment.Left, IsHitTestVisible = false,
                     Clip = new RectangleGeometry { Rect = new Rect(0, 0, width, 52) }
                 };
-                for (double x = -52; x < row.Width; x += 9)
-                    hatch.Children.Add(new Line { X1 = x - left, Y1 = 52, X2 = x - left + 52, Y2 = 0, Stroke = color, Opacity = _highContrast ? 1 : .16, StrokeThickness = 1 });
+                var strokes = new GeometryGroup();
+                // Preserve the global hatch phase, but generate only visible strokes.
+                for (double x = Math.Floor((left - 52) / 9) * 9; x < left + width; x += 9)
+                    strokes.Children.Add(new LineGeometry { StartPoint = new(x - left, 52), EndPoint = new(x - left + 52, 0) });
+                hatch.Children.Add(new Microsoft.UI.Xaml.Shapes.Path { Data = strokes, Stroke = color,
+                    Opacity = _highContrast ? 1 : .16, StrokeThickness = 1 });
                 band.Children.Add(hatch);
             }
             Hatch(0, row.LeadWidth);
@@ -191,6 +218,7 @@ public sealed partial class CourtTimelineView
             var button = ItemButton(band, selection, $"{stage.Title}, {stage.Status}, {row.VisualStart.ToString("D", Culture)} — {row.VisualEnd.ToString("D", Culture)}", stage.Note);
             button.Padding = new Thickness(0); button.MinWidth = 0; button.MinHeight = 0; button.BorderThickness = new Thickness(0);
             button.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            _selectionVisuals.Add((button, selection, stage, outline, null));
             Put(button, row.Left, y);
         }
         foreach (var placement in row.Events)
@@ -202,15 +230,98 @@ public sealed partial class CourtTimelineView
             var selection = new CourtTimelineSelection(CourtTimelineItemKind.Event, item.Id);
             var copy = new StackPanel { Spacing = 2 };
             copy.Children.Add(Text(Day(item.Date) + (item.Time is { Length: > 0 } time ? " · " + time : ""), 9, "Muted"));
-            copy.Children.Add(Text(item.Title, 10, bold: selection == SelectedItem));
+            var eventTitle = Text(item.Title, 10, bold: selection == SelectedItem);
+            copy.Children.Add(eventTitle);
             var button = ItemButton(copy, selection, $"{item.Title}, {item.Date.ToString("D", Culture)} {item.Time}, {(item.Planned ? Strings.Planned : Strings.Occurred)}", item.Note ?? "");
             button.Width = TimelineLayout.EventWidth; button.Height = 40;
             button.Padding = new Thickness(7, 3, 7, 3); button.CornerRadius = new CornerRadius(4);
             button.Background = Brush(selection == SelectedItem ? "Today" : "Surface");
             button.BorderBrush = selection == SelectedItem ? color : Brush("Line");
             button.BorderThickness = new Thickness(selection == SelectedItem ? 2 : 1);
+            _selectionVisuals.Add((button, selection, stage, null, eventTitle));
             Canvas.SetZIndex(button, 2); Put(button, placement.Left, labelTop);
         }
+        if (row.OverflowEvents.Count > 0)
+        {
+            // Keep every event date on the axis even when its label is in the menu.
+            if (_layout is { } layout && Data is { } data)
+            {
+                foreach (bool planned in new[] { false, true })
+                {
+                    var dots = new GeometryGroup { FillRule = FillRule.Nonzero };
+                    foreach (var item in row.OverflowEvents.Where(e => e.Planned == planned))
+                    {
+                        double point = layout.X(item.Date, data.Start) + layout.DayWidth / 2;
+                        dots.Children.Add(new EllipseGeometry { Center = new(point, y + 64), RadiusX = 4, RadiusY = 4 });
+                    }
+                    if (dots.Children.Count > 0)
+                        Put(new Microsoft.UI.Xaml.Shapes.Path { Data = dots, Fill = planned ? Brush("Surface") : color,
+                            Stroke = color, StrokeThickness = 1.5, IsHitTestVisible = false }, 0, 0);
+                }
+            }
+            var button = new Button
+            {
+                Content = string.Format(Culture, Strings.MoreEvents, row.OverflowEvents.Count),
+                Height = 36, MaxWidth = _canvas.Width - TimelineLayout.LabelWidth - 8,
+                Tag = stage.Id
+            };
+            AutomationProperties.SetAutomationId(button, $"CourtTimeline.Overflow.{stage.Id}");
+            AutomationProperties.SetName(button, $"{stage.Title}, {button.Content}");
+            button.Click += (_, _) => ShowOverflow(button, row);
+            _overflowButtons.Add((button, row));
+            Put(button, TimelineLayout.LabelWidth, y + 69 + TimelineLayout.MaxEventLanes * 44);
+        }
+    }
+
+    private void ShowOverflow(Button anchor, TimelineLayout.Row row)
+    {
+        // Create menu items only on demand, never as part of the timeline's layout pass.
+        var menu = new MenuFlyout();
+        foreach (var item in row.OverflowEvents)
+        {
+            var selection = new CourtTimelineSelection(CourtTimelineItemKind.Event, item.Id);
+            var entry = new MenuFlyoutItem
+            {
+                Text = $"{item.Date.ToString("d MMM yyyy", Culture)} {item.Time} · {item.Title}"
+            };
+            AutomationProperties.SetAutomationId(entry, $"CourtTimeline.Event.{item.Id}");
+            AutomationProperties.SetName(entry, entry.Text);
+            entry.Click += (_, _) => SelectedItem = selection;
+            menu.Items.Add(entry);
+        }
+        menu.ShowAt(anchor);
+    }
+
+    private void UpdateSelectionVisuals()
+    {
+        foreach (var visual in _selectionVisuals)
+        {
+            bool selected = SelectedItem == visual.Selection;
+            if (visual.Outline is { } outline) outline.StrokeThickness = selected ? 2 : 1;
+            else
+            {
+                visual.Button.Background = Brush(selected ? "Today" : "Surface");
+                visual.Button.BorderBrush = selected ? Tone(visual.Stage) : Brush("Line");
+                visual.Button.BorderThickness = new Thickness(selected ? 2 : 1);
+                if (visual.Title is { } title) title.FontWeight = selected ? FontWeights.SemiBold : FontWeights.Normal;
+            }
+        }
+        foreach (var (button, row) in _overflowButtons)
+        {
+            bool selected = SelectedItem is { Kind: CourtTimelineItemKind.Event } selection
+                && row.OverflowEvents.Any(item => item.Id == selection.Id);
+            button.BorderBrush = selected ? Tone(row.Stage) : Brush("Line");
+            button.BorderThickness = new Thickness(selected ? 2 : 1);
+        }
+    }
+
+    private void UpdateTodayCaption()
+    {
+        if (_todayLabel is null || Data is not { } data) return;
+        var mark = TodayMark(data);
+        _todayLabel.Text = mark.Time is { } time
+            ? $"{Day(mark.Date)} · {time.ToString("t", Culture)} · {Strings.Today}"
+            : $"{Day(mark.Date)} · {Strings.Today}";
     }
 
     private readonly record struct TodayMarker(DateOnly Date, TimeOnly? Time);
@@ -296,6 +407,7 @@ public sealed partial class CourtTimelineView
 
     private void RenderDetails()
     {
+        if (!ShowDetails) { _details.Child = null; return; }
         var copy = new StackPanel { Spacing = 6 };
         var selection = SelectedItem;
         var item = selection?.Kind == CourtTimelineItemKind.Event ? Data?.Events.FirstOrDefault(e => e.Id == selection.Id) : null;
